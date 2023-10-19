@@ -9,6 +9,10 @@ import tempfile
 import time
 from typing import Any, Optional, Union
 
+from fpdf import FPDF
+import unidecode
+from docx import Document
+
 import openai
 import tiktoken
 from azure.ai.formrecognizer import DocumentAnalysisClient
@@ -69,6 +73,32 @@ CACHE_KEY_TOKEN_TYPE = "token_type"
 # Embedding batch support section
 SUPPORTED_BATCH_AOAI_MODEL = {"text-embedding-ada-002": {"token_limit": 8100, "max_batch_size": 16}}
 
+
+def docx_to_txt(docx_filename: str) -> str:
+    doc = Document(docx_filename)
+    result = []
+    for para in doc.paragraphs:
+        result.append(para.text)
+    txt_filename = docx_filename.replace(".docx", ".txt")
+    with open(txt_filename, "w", encoding="utf-8") as txt_file:
+        txt_file.write("\n".join(result))
+    return txt_filename
+
+def txt_to_pdf(txt_filename):
+    # Read the file and remove the BOM
+    with open(txt_filename, 'r', encoding='utf-8-sig') as file:
+        content = file.read()
+
+    # Convert content to ASCII
+    content_ascii = unidecode.unidecode(content)
+
+    pdf_filename = txt_filename.replace(".txt", ".pdf")
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, content_ascii)
+    pdf.output(pdf_filename)
+    return pdf_filename
 
 def calculate_tokens_emb_aoai(input: str):
     encoding = tiktoken.encoding_for_model(args.openaimodelname)
@@ -514,6 +544,19 @@ def read_files(
             if os.path.isdir(filename):
                 read_files(filename + "/*", use_vectors, vectors_batch_support)
                 continue
+
+            # Check if the file is a .docx file and convert it to .txt
+            if os.path.splitext(filename)[1].lower() == ".docx":
+                if args.verbose:
+                    print(f"Converting '{filename}' to TXT")
+                filename = docx_to_txt(filename)
+
+            # Check if the file is a .txt file and convert it to .pdf
+            if os.path.splitext(filename)[1].lower() == ".txt":
+                if args.verbose:
+                    print(f"Converting '{filename}' to PDF")
+                filename = txt_to_pdf(filename)
+
             try:
                 if not args.skipblobs:
                     upload_blobs(filename)
@@ -530,6 +573,52 @@ def read_files(
                 index_sections(os.path.basename(filename), sections)
             except Exception as e:
                 print(f"\tGot an error while reading {filename} -> {e} --> skipping file")
+
+
+# def read_files(
+#     path_pattern: str,
+#     use_vectors: bool,
+#     vectors_batch_support: bool,
+#     embedding_deployment: Optional[str] = None,
+#     embedding_model: Optional[str] = None,
+# ):
+#     """
+#     Recursively read directory structure under `path_pattern`
+#     and execute indexing for the individual files
+#     """
+#     for filename in glob.glob(path_pattern):
+#         if args.verbose:
+#             print(f"Processing '{filename}'")
+#         if args.remove:
+#             remove_blobs(filename)
+#             remove_from_index(filename)
+#         else:
+#             if os.path.isdir(filename):
+#                 read_files(filename + "/*", use_vectors, vectors_batch_support)
+#                 continue
+            
+#             # Check if the file is a .txt file and convert it to .pdf
+#             if os.path.splitext(filename)[1].lower() == ".txt":
+#                 if args.verbose:
+#                     print(f"Converting '{filename}' to PDF")
+#                 filename = txt_to_pdf(filename)
+            
+#             try:
+#                 if not args.skipblobs:
+#                     upload_blobs(filename)
+#                 page_map = get_document_text(filename)
+#                 sections = create_sections(
+#                     os.path.basename(filename),
+#                     page_map,
+#                     use_vectors and not vectors_batch_support,
+#                     embedding_deployment,
+#                     embedding_model,
+#                 )
+#                 if use_vectors and vectors_batch_support:
+#                     sections = update_embeddings_in_batch(sections)
+#                 index_sections(os.path.basename(filename), sections)
+#             except Exception as e:
+#                 print(f"\tGot an error while reading {filename} -> {e} --> skipping file")
 
 
 def read_adls_gen2_files(

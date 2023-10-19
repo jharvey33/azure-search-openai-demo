@@ -2,6 +2,14 @@
 
 . ./scripts/loadenv.sh
 
+# Ensure fpdf and unidecode is installed for .txt to .pdf conversion
+./scripts/.venv/bin/pip install fpdf
+./scripts/.venv/bin/pip install unidecode
+
+#.docx to .txt to .pdf conversion
+./scripts/.venv/bin/pip install python-docx
+
+
 echo 'Running "prepdocs.py"'
 
 if [ -n "$AZURE_ADLS_GEN2_STORAGE_ACCOUNT" ]; then
